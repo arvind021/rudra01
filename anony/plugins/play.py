@@ -4,6 +4,7 @@
 
 from pathlib import Path
 from pyrogram import filters, types
+from pyrogram.errors import MessageNotModified
 
 from anony import anon, app, config, db, lang, queue, tg, yt
 from anony.helpers import buttons, utils
@@ -29,6 +30,7 @@ async def play_hndlr(
     _,
     m: types.Message,
     force: bool = False,
+    m3u8: bool = False,
     video: bool = False,
     url: str = None,
 ) -> None:
@@ -40,7 +42,11 @@ async def play_hndlr(
 
     if url:
         if "playlist" in url:
-            await sent.edit_text(m.lang["playlist_fetch"])
+            try:
+                await sent.edit_text(m.lang["playlist_fetch"])
+            except MessageNotModified:
+                pass
+
             tracks = await yt.playlist(
                 config.PLAYLIST_LIMIT, mention, url, video
             )
@@ -114,7 +120,10 @@ async def play_hndlr(
         if Path(fname).exists():
             file.file_path = fname
         else:
-            await sent.edit_text(m.lang["play_downloading"])
+            try:
+                await sent.edit_text(m.lang["play_downloading"])
+            except MessageNotModified:
+                pass
             file.file_path = await yt.download(file.id, video=video)
 
     await anon.play_media(chat_id=m.chat.id, message=sent, media=file)

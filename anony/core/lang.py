@@ -7,21 +7,13 @@ import json
 from functools import wraps
 from pathlib import Path
 
+from pyrogram import errors
+
 from anony import db, logger
 
 lang_codes = {
-    "ar": "Arabic",
-    "de": "German",
     "en": "English",
-    "es": "Spanish",
-    "fr": "French",
     "hi": "Hindi",
-    "ja": "Japanese",
-    "my": "Burmese",
-    "pa": "Punjabi",
-    "pt": "Portuguese",
-    "ru": "Russian",
-    "zh": "Chinese",
 }
 
 
@@ -71,13 +63,18 @@ class Language:
                     chat = fallen.message.chat
 
                 if chat.id in db.blacklisted:
+                    logger.warning(f"Chat {chat.id} is blacklisted, leaving...")
                     return await chat.leave()
 
                 lang_code = await db.get_lang(chat.id)
                 lang_dict = self.languages[lang_code]
 
                 setattr(fallen, "lang", lang_dict)
-                return await func(*args, **kwargs)
+                try:
+                    return await func(*args, **kwargs)
+                except (errors.Forbidden, errors.exceptions.Forbidden):
+                    logger.warning(f"Cannot write to chat {chat.id}, leaving...")
+                    return await chat.leave()
 
             return wrapper
 
