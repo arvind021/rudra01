@@ -3,7 +3,8 @@
 # This file is part of AnonXMusic
 
 
-from ntgcalls import ConnectionNotFound, TelegramServerError
+from ntgcalls import (ConnectionNotFound, TelegramServerError,
+                      RTMPStreamingUnsupported)
 from pyrogram.errors import MessageIdInvalid
 from pyrogram.types import InputMediaPhoto, Message
 from pytgcalls import PyTgCalls, exceptions, types
@@ -114,7 +115,9 @@ class TgCall(PyTgCalls):
         except (ConnectionNotFound, TelegramServerError):
             await self.stop(chat_id)
             await message.edit_text(_lang["error_tg_server"])
-
+        except RTMPStreamingUnsupported:
+            await self.stop(chat_id)
+            await message.edit_text(_lang["error_rtmp"])  
 
     async def replay(self, chat_id: int) -> None:
         if not await db.get_call(chat_id):
