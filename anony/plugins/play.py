@@ -4,7 +4,6 @@
 
 from pathlib import Path
 from pyrogram import filters, types
-from pyrogram.errors import MessageNotModified
 
 from anony import anon, app, config, db, lang, queue, tg, yt
 from anony.helpers import buttons, utils
@@ -18,6 +17,7 @@ def playlist_to_queue(chat_id: int, tracks: list) -> str:
         text += f"<b>{pos}.</b> {track.title}\n"
     text = text[:1948] + "</blockquote>"
     return text
+
 
 @app.on_message(
     filters.command(["play", "playforce", "vplay", "vplayforce"])
@@ -42,10 +42,7 @@ async def play_hndlr(
 
     if url:
         if "playlist" in url:
-            try:
-                await sent.edit_text(m.lang["playlist_fetch"])
-            except MessageNotModified:
-                pass
+            await sent.edit_text(m.lang["playlist_fetch"])
 
             tracks = await yt.playlist(
                 config.PLAYLIST_LIMIT, mention, url, video
@@ -120,15 +117,13 @@ async def play_hndlr(
         if Path(fname).exists():
             file.file_path = fname
         else:
-            try:
-                await sent.edit_text(m.lang["play_downloading"])
-            except MessageNotModified:
-                pass
+            await sent.edit_text(m.lang["play_downloading"])
             file.file_path = await yt.download(file.id, video=video)
 
     await anon.play_media(chat_id=m.chat.id, message=sent, media=file)
     if not tracks:
         return
+
     added = playlist_to_queue(m.chat.id, tracks)
     await app.send_message(
         chat_id=m.chat.id,
