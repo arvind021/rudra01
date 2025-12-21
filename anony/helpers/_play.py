@@ -100,6 +100,10 @@ def checkUB(play):
                     except errors.HideRequesterMissing:
                         pass
                     except Exception as ex:
+                        return await umm.edit_text(
+                            m.lang["play_invite_error"].format(type(ex).__name__)
+                        )
+                except Exception as ex:
                     return await umm.edit_text(
                         m.lang["play_invite_error"].format(type(ex).__name__)
                     )
