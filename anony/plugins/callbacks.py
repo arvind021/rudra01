@@ -115,7 +115,6 @@ async def _controls(_, query: types.CallbackQuery):
     except:
         pass
 
-
 @app.on_callback_query(filters.regex("help") & ~app.bl_users)
 @lang.language()
 async def _help(_, query: types.CallbackQuery):
@@ -128,43 +127,29 @@ async def _help(_, query: types.CallbackQuery):
             text=query.lang["help_menu"], reply_markup=buttons.help_markup(query.lang)
         )
     elif data[1] == "close":
-        try:
-            await query.message.delete()
-            return await query.message.reply_to_message.delete()
-        except:
-            pass
+        await query.message.delete()
+        if query.message.reply_to_message:
+            await query.message.reply_to_message.delete()
+        return
 
     await query.edit_message_text(
         text=query.lang[f"help_{data[1]}"],
         reply_markup=buttons.help_markup(query.lang, True),
     )
 
-
-@app.on_callback_query(filters.regex("settings") & ~app.bl_users)
+@app.on_callback_query(filters.regex("playmode") & ~app.bl_users)
 @lang.language()
 @admin_check
-async def _settings_cb(_, query: types.CallbackQuery):
-    cmd = query.data.split()
-    if len(cmd) == 1:
-        return await query.answer()
+async def _playmode(_, query: types.CallbackQuery):
     await query.answer(query.lang["processing"], show_alert=True)
-
     chat_id = query.message.chat.id
-    _admin = await db.get_play_mode(chat_id)
-    _delete = await db.get_cmd_delete(chat_id)
+    admin_only = await db.get_play_mode(chat_id)
     _language = await db.get_lang(chat_id)
-
-    if cmd[1] == "delete":
-        _delete = not _delete
-        await db.set_cmd_delete(chat_id, _delete)
-    elif cmd[1] == "play":
-        await db.set_play_mode(chat_id, _admin)
-        _admin = not _admin
+    await db.set_play_mode(chat_id, admin_only)
     await query.edit_message_reply_markup(
         reply_markup=buttons.settings_markup(
             query.lang,
-            _admin,
-            _delete,
+            not admin_only,
             _language,
             chat_id,
         )
