@@ -120,7 +120,7 @@ async def _controls(_, query: types.CallbackQuery):
 async def _help(_, query: types.CallbackQuery):
     data = query.data.split()
     if len(data) == 1:
-        await query.answer(query, url=f"https://t.me/{app.username}?start=help")
+        return await query.answer(url=f"https://t.me/{app.username}?start=help")
 
     if data[1] == "back":
         return await query.edit_message_text(
@@ -136,6 +136,7 @@ async def _help(_, query: types.CallbackQuery):
         text=query.lang[f"help_{data[1]}"],
         reply_markup=buttons.help_markup(query.lang, True),
     )
+
 
 @app.on_callback_query(filters.regex("playmode") & ~app.bl_users)
 @lang.language()
