@@ -2,7 +2,6 @@
 # Licensed under the MIT License.
 # This file is part of AnonXMusic
 
-
 import re
 
 from pyrogram import filters, types
@@ -32,6 +31,7 @@ async def _controls(_, query: types.CallbackQuery):
 
     if action == "status":
         return await query.answer()
+
     await query.answer(query.lang["processing"], show_alert=True)
 
     if action == "pause":
@@ -55,6 +55,7 @@ async def _controls(_, query: types.CallbackQuery):
             return await query.edit_message_reply_markup(
                 reply_markup=buttons.queue_markup(chat_id, query.lang["playing"], True)
             )
+        status = query.lang["playing"]
         reply = query.lang["play_resumed"].format(user)
 
     elif action == "skip":
@@ -71,7 +72,9 @@ async def _controls(_, query: types.CallbackQuery):
         queue.force_add(chat_id, media, remove=pos)
         try:
             await app.delete_messages(
-                chat_id=chat_id, message_ids=[m_id, media.message_id], revoke=True
+                chat_id=chat_id,
+                message_ids=[m_id, media.message_id],
+                revoke=True,
             )
             media.message_id = None
         except:
@@ -107,11 +110,13 @@ async def _controls(_, query: types.CallbackQuery):
                 flags=re.DOTALL,
             )
             keyboard = buttons.controls(
-                chat_id, status=status if action != "resume" else None
+                chat_id,
+                status=status if action != "resume" else None,
             )
-        await query.edit_message_text(
-            f"{mtext}\n\n<blockquote>{reply}</blockquote>", reply_markup=keyboard
-        )
+            await query.edit_message_text(
+                f"{mtext}\n\n<blockquote>{reply}</blockquote>",
+                reply_markup=keyboard,
+            )
     except:
         pass
 
@@ -120,19 +125,23 @@ async def _controls(_, query: types.CallbackQuery):
 @lang.language()
 async def _help(_, query: types.CallbackQuery):
     data = query.data.split()
+
     if len(data) == 1:
-        return await query.answer(url=f"https://t.me/{app.username}?start=help")
+        return await query.answer(
+            url=f"https://t.me/{app.username}?start=help"
+        )
 
     if data[1] == "back":
         return await query.edit_message_text(
-            text=query.lang["help_menu"], reply_markup=buttons.help_markup(query.lang)
+            text=query.lang["help_menu"],
+            reply_markup=buttons.help_markup(query.lang),
         )
+
     elif data[1] == "close":
-        try:
-            await query.message.delete()
-            return await query.message.reply_to_message.delete()
-        except:
-            pass
+        await query.message.delete()
+        if query.message.reply_to_message:
+            await query.message.reply_to_message.delete()
+        return
 
     await query.edit_message_text(
         text=query.lang[f"help_{data[1]}"],
@@ -147,6 +156,7 @@ async def _settings_cb(_, query: types.CallbackQuery):
     cmd = query.data.split()
     if len(cmd) == 1:
         return await query.answer()
+
     await query.answer(query.lang["processing"], show_alert=True)
 
     chat_id = query.message.chat.id
@@ -157,9 +167,11 @@ async def _settings_cb(_, query: types.CallbackQuery):
     if cmd[1] == "delete":
         _delete = not _delete
         await db.set_cmd_delete(chat_id, _delete)
+
     elif cmd[1] == "play":
         await db.set_play_mode(chat_id, _admin)
         _admin = not _admin
+
     await query.edit_message_reply_markup(
         reply_markup=buttons.settings_markup(
             query.lang,
