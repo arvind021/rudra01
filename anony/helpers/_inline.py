@@ -146,7 +146,7 @@ class Inline:
                 [
                     self.ikb(
                         text=lang["source"],
-                        url="https://t.me/+GnzQDHefH9FiNDFl",
+                        url="https://t.me/RUD_RA_65",
                     )
                 ]
             ]
