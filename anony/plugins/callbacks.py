@@ -115,7 +115,7 @@ async def _controls(_, query: types.CallbackQuery):
     except:
         pass
 
-@app.on_callback_query(filters.regex("help") & ~app.bl_users)
+@@app.on_callback_query(filters.regex("help") & ~app.bl_users)
 @lang.language()
 async def _help(_, query: types.CallbackQuery):
     data = query.data.split()
@@ -127,16 +127,17 @@ async def _help(_, query: types.CallbackQuery):
             text=query.lang["help_menu"], reply_markup=buttons.help_markup(query.lang)
         )
     elif data[1] == "close":
-        await query.message.delete()
-        if query.message.reply_to_message:
-            await query.message.reply_to_message.delete()
-        return
+        try:
+            await query.message.delete()
+            return await query.message.reply_to_message.delete()
+        except:
+            pass
 
     await query.edit_message_text(
         text=query.lang[f"help_{data[1]}"],
         reply_markup=buttons.help_markup(query.lang, True),
     )
-
+    
 @app.on_callback_query(filters.regex("playmode") & ~app.bl_users)
 @lang.language()
 @admin_check
