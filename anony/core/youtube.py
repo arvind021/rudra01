@@ -16,7 +16,7 @@ from py_yt import Playlist, VideosSearch
 from anony import logger, config
 from anony.helpers import Track, utils
 
-from .musicApi import FallenApi
+from .musicApi import MusicApi
 
 
 class YouTube:
@@ -24,7 +24,7 @@ class YouTube:
         self.base = "https://www.youtube.com/watch?v="
         self.cookies = []
         self.checked = False
-        self.fallen = FallenApi()
+        self.fallen = MusicApi()
         self.cookie_dir = "anony/cookies"
         self.warned = False
         self.regex = re.compile(
