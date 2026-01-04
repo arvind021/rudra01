@@ -13,8 +13,10 @@ from pathlib import Path
 
 from py_yt import Playlist, VideosSearch
 
-from anony import logger
+from anony import logger, config
 from anony.helpers import Track, utils
+
+from .musicApi import FallenApi
 
 
 class YouTube:
@@ -22,8 +24,9 @@ class YouTube:
         self.base = "https://www.youtube.com/watch?v="
         self.cookies = []
         self.checked = False
-        self.warned = False
+        self.fallen = FallenApi()
         self.cookie_dir = "anony/cookies"
+        self.warned = False
         self.regex = re.compile(
             r"(https?://)?(www\.|m\.|music\.)?"
             r"(youtube\.com/(watch\?v=|shorts/|playlist\?list=)|youtu\.be/)"
@@ -48,7 +51,7 @@ class YouTube:
         async with aiohttp.ClientSession() as session:
             for i, url in enumerate(urls):
                 path = f"{self.cookie_dir}/cookie_{i}.txt"
-                link = "https://batbin.me/api/v2/paste/" + url.split("/")[-1]
+                link = url.replace("me/", "me/raw/")
                 async with session.get(link) as resp:
                     resp.raise_for_status()
                     with open(path, "wb") as fw:
@@ -69,7 +72,7 @@ class YouTube:
                 duration=data.get("duration"),
                 duration_sec=utils.to_seconds(data.get("duration")),
                 message_id=m_id,
-                title=data.get("title"),
+                title=data.get("title")[:25],
                 thumbnail=data.get("thumbnails", [{}])[-1].get("url").split("?")[0],
                 url=data.get("link"),
                 view_count=data.get("viewCount", {}).get("short"),
@@ -87,7 +90,7 @@ class YouTube:
                     channel_name=data.get("channel", {}).get("name", ""),
                     duration=data.get("duration"),
                     duration_sec=utils.to_seconds(data.get("duration")),
-                    title=data.get("title"),
+                    title=data.get("title")[:25],
                     thumbnail=data.get("thumbnails")[-1].get("url").split("?")[0],
                     url=data.get("link").split("&list=")[0],
                     user=user,
@@ -101,9 +104,12 @@ class YouTube:
 
     async def download(self, video_id: str, video: bool = False) -> str | None:
         url = self.base + video_id
+        if not video and config.API_KEY and config.API_URL:
+            if file_path := await self.fallen.download_track(url):
+                return file_path
+
         ext = "mp4" if video else "webm"
         filename = f"downloads/{video_id}.{ext}"
-
         if Path(filename).exists():
             return filename
 
