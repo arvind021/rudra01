@@ -8,98 +8,100 @@ import yt_dlp
 import random
 import asyncio
 import aiohttp
-import logging
 from pathlib import Path
 
 from py_yt import Playlist, VideosSearch
 
-from anony import config
+from anony import logger, config
 from anony.helpers import Track, utils
-
-# Enable debug logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
-asyncio.get_event_loop().set_debug(True)  # Debug asyncio
 
 BASE_URL = config.BASE_URL
 API_KEY = config.API_KEY
 
-async def _download_media(link: str, kind: str, exts: list[str], wait: int = 100):
+
+async def _download_media(link: str, kind: str, exts: list[str], wait: int = 60):
     vid = link.split("v=")[-1].split("&")[0]
-    logger.debug(f"Starting _download_media for {kind}: vid={vid}, exts={exts}")
-    
     os.makedirs("downloads", exist_ok=True)
+
+    # Return if already downloaded
     for ext in exts:
         path = f"downloads/{vid}.{ext}"
         if os.path.exists(path):
             logger.info(f"Found existing file: {path}")
             return path
-    
+
     try:
-        logger.debug(f"Fetching from API: {BASE_URL}/api/{kind}?query={vid}&eq=pro&api={API_KEY}")
         async with aiohttp.ClientSession() as session:
-            # Add trace config for aiohttp debugging
-            trace_config = aiohttp.TraceConfig()
-            trace_config.on_request_start.append(
-                lambda *args: logger.debug(f"AIOHTTP request start: {args}")
-            )
-            trace_config.on_request_end.append(
-                lambda *args: logger.debug(f"AIOHTTP request end: {args}")
-            )
-            session_tracer = aiohttp.TraceConfig()
-            session_tracer.on_request_start.append(
-                lambda session, ctx, params: logger.debug(f'Starting {kind} request {params.method} {params.url}')
-            )
-            session_tracer.on_request_end.append(
-                lambda session, ctx, response: logger.debug(f'Ended {kind} request {response.status}')
-            )
-            
-            async with aiohttp.ClientSession(trace_configs=[session_tracer]) as session:
-                async with session.get(
-                    f"{BASE_URL}/api/{kind}?query={vid}&eq=pro&api={API_KEY}"
-                ) as resp:
-                    logger.debug(f"API response status: {resp.status}")
-                    res = await resp.json()
-                    logger.debug(f"API response: {res}")
-                    
+            # Step 1: Get stream URL from API
+            api_url = f"{BASE_URL}/api/{kind}?query={vid}&eq=pro&api={API_KEY}"
+            async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status != 200:
+                    raise Exception(f"API returned {resp.status}")
+                res = await resp.json()
+
             stream = res.get("stream")
             media_type = res.get("type")
-            logger.debug(f"Stream: {stream}, Type: {media_type}")
-            
+
             if not stream:
-                logger.error(f"{kind} stream not found in response")
-                raise Exception(f"{kind} stream not found")
-                
+                raise Exception(f"{kind} stream not found in API response")
+
+            # Step 2: Live stream - return URL directly
             if media_type == "live":
-                logger.info(f"Live stream detected: {stream}")
                 return stream
-                
-            logger.info(f"Waiting for {kind} processing, max {wait} attempts")
+
+            # Step 3: Wait for stream to be ready, then download file
+            logger.info(f"Waiting for {kind} to be ready...")
             for attempt in range(wait):
-                logger.debug(f"Attempt {attempt + 1}/{wait} for stream availability")
-                async with session.get(stream) as r:
-                    logger.debug(f"Stream check status: {r.status}")
+                async with session.get(stream, timeout=aiohttp.ClientTimeout(total=60)) as r:
                     if r.status == 200:
-                        logger.info(f"Stream ready after {attempt + 1} attempts")
-                        return stream
-                    if r.status in (423, 404, 410):
+                        # Determine file extension from content-type
+                        content_type = r.headers.get("Content-Type", "")
+                        if "mp4" in content_type:
+                            ext = "mp4"
+                        elif "webm" in content_type:
+                            ext = "webm"
+                        elif "mpeg" in content_type or "mp3" in content_type:
+                            ext = "mp3"
+                        elif "m4a" in content_type or "mp4a" in content_type:
+                            ext = "m4a"
+                        else:
+                            ext = exts[0]
+
+                        file_path = f"downloads/{vid}.{ext}"
+
+                        # Download the actual file
+                        logger.info(f"Downloading {kind} to {file_path}...")
+                        with open(file_path, "wb") as f:
+                            async for chunk in r.content.iter_chunked(1024 * 64):
+                                f.write(chunk)
+
+                        if os.path.getsize(file_path) < 10000:
+                            os.remove(file_path)
+                            raise Exception("Downloaded file too small, likely invalid")
+
+                        logger.info(f"Downloaded via API: {file_path}")
+                        return file_path
+
+                    elif r.status in (423, 404, 410):
                         await asyncio.sleep(2)
                         continue
-                    if r.status in (401, 403, 429):
+                    elif r.status in (401, 403, 429):
                         txt = await r.text()
-                        logger.error(f"{kind} blocked {r.status}: {txt[:100]}")
                         raise Exception(f"{kind} blocked {r.status}: {txt[:100]}")
-                    logger.warning(f"{kind} failed ({r.status}) on attempt {attempt + 1}")
-                    raise Exception(f"{kind} failed ({r.status})")
-            logger.error(f"{kind} processing timeout after {wait} attempts")
-            raise Exception(f"{kind} processing timeout")
+                    else:
+                        raise Exception(f"{kind} failed ({r.status})")
+
+            raise Exception(f"{kind} processing timeout after {wait} attempts")
+
     except Exception as e:
-        logger.exception(f"Exception in _download_media for {kind}: {e}")
+        logger.warning(f"API download failed for {kind}: {e}")
         raise
+
 
 async def download_song(link: str):
     logger.info(f"Downloading song: {link}")
     return await _download_media(link, "song", ["mp3", "m4a", "webm"], wait=60)
+
 
 async def download_video(link: str):
     logger.info(f"Downloading video: {link}")
@@ -114,82 +116,64 @@ class YouTube:
         self.cookie_dir = "anony/cookies"
         self.warned = False
         self.regex = re.compile(
-            r"(https?://)?(www.|m.|music.)?"
-            r"(youtube.com/(watch?v=|shorts/|playlist?list=)|youtu.be/)"
-            r"([A-Za-z0-9_-]{11}|PL[A-Za-z0-9_-]+)([&?][^s]*)?"
+            r"(https?://)?(www\.|m\.|music\.)?"
+            r"(youtube\.com/(watch\?v=|shorts/|playlist\?list=)|youtu\.be/)"
+            r"([A-Za-z0-9_-]{11}|PL[A-Za-z0-9_-]+)([&?][^\s]*)?"
         )
-        logger.info("YouTube class initialized")
 
     def get_cookies(self):
         if not self.checked:
-            logger.debug(f"Checking cookies in {self.cookie_dir}")
-            if os.path.exists(self.cookie_dir):
-                for file in os.listdir(self.cookie_dir):
-                    if file.endswith(".txt"):
-                        self.cookies.append(f"{self.cookie_dir}/{file}")
+            for file in os.listdir(self.cookie_dir):
+                if file.endswith(".txt"):
+                    self.cookies.append(f"{self.cookie_dir}/{file}")
             self.checked = True
-            logger.info(f"Found {len(self.cookies)} cookie files")
         if not self.cookies:
             if not self.warned:
-                logger.warning("No cookies available")
                 self.warned = True
+                logger.warning("Cookies are missing; downloads might fail.")
             return None
-        cookie = random.choice(self.cookies)
-        logger.debug(f"Selected cookie: {cookie}")
-        return cookie
+        return random.choice(self.cookies)
 
     async def save_cookies(self, urls: list[str]) -> None:
-        logger.info(f"Saving {len(urls)} cookies")
+        logger.info("Saving cookies from urls...")
         async with aiohttp.ClientSession() as session:
             for i, url in enumerate(urls):
                 path = f"{self.cookie_dir}/cookie_{i}.txt"
                 link = url.replace("me/", "me/raw/")
-                logger.debug(f"Downloading cookie {i}: {link} -> {path}")
                 async with session.get(link) as resp:
                     resp.raise_for_status()
                     with open(path, "wb") as fw:
-                        content = await resp.read()
-                        fw.write(content)
-                        logger.info(f"Saved cookie {path} ({len(content)} bytes)")
+                        fw.write(await resp.read())
+        logger.info(f"Cookies saved in {self.cookie_dir}.")
 
     def valid(self, url: str) -> bool:
-        is_valid = bool(re.match(self.regex, url))
-        logger.debug(f"URL valid check '{url}': {is_valid}")
-        return is_valid
+        return bool(re.match(self.regex, url))
 
     async def search(self, query: str, m_id: int, video: bool = False) -> Track | None:
         logger.info(f"Searching YouTube: '{query}', video={video}")
-        try:
-            _search = VideosSearch(query, limit=1, with_live=False)
-            results = await _search.next()
-            logger.debug(f"Search results: {results}")
-            if results and results["result"]:
-                data = results["result"][0]
-                logger.info(f"Found track: {data.get('title')[:50]}")
-                track = Track(
-                    id=data.get("id"),
-                    channel_name=data.get("channel", {}).get("name"),
-                    duration=data.get("duration"),
-                    duration_sec=utils.to_seconds(data.get("duration")),
-                    message_id=m_id,
-                    title=data.get("title")[:25],
-                    thumbnail=data.get("thumbnails", [{}])[-1].get("url").split("?")[0],
-                    url=data.get("link"),
-                    view_count=data.get("viewCount", {}).get("short"),
-                    video=video,
-                )
-                return track
-            logger.warning("No search results found")
-        except Exception as e:
-            logger.exception(f"Search error: {e}")
+        _search = VideosSearch(query, limit=1, with_live=False)
+        results = await _search.next()
+        if results and results["result"]:
+            data = results["result"][0]
+            logger.info(f"Found track: {data.get('title')[:50]}")
+            return Track(
+                id=data.get("id"),
+                channel_name=data.get("channel", {}).get("name"),
+                duration=data.get("duration"),
+                duration_sec=utils.to_seconds(data.get("duration")),
+                message_id=m_id,
+                title=data.get("title")[:25],
+                thumbnail=data.get("thumbnails", [{}])[-1].get("url").split("?")[0],
+                url=data.get("link"),
+                view_count=data.get("viewCount", {}).get("short"),
+                video=video,
+            )
         return None
 
     async def playlist(self, limit: int, user: str, url: str, video: bool) -> list[Track | None]:
-        logger.info(f"Fetching playlist: {url} limit={limit}")
         tracks = []
         try:
             plist = await Playlist.get(url)
-            logger.debug(f"Playlist data: {len(plist.get('videos', []))} videos")
             for data in plist["videos"][:limit]:
                 track = Track(
                     id=data.get("id"),
@@ -204,73 +188,67 @@ class YouTube:
                     video=video,
                 )
                 tracks.append(track)
-                logger.debug(f"Added track: {track.title}")
-        except Exception as e:
-            logger.exception(f"Playlist fetch error: {e}")
-        logger.info(f"Playlist returned {len(tracks)} tracks")
+        except:
+            pass
         return tracks
 
     async def download(self, video_id: str, video: bool = False) -> str | None:
         url = self.base + video_id
-        logger.info(f"Downloading { 'video' if video else 'audio' }: {video_id}")
-        
+        logger.info(f"Downloading {'video' if video else 'audio'}: {video_id}")
+
+        # Try API first
         try:
             if not video:
                 file_path = await download_song(url)
             else:
                 file_path = await download_video(url)
             if file_path:
-                logger.info(f"Downloaded via API: {file_path}")
                 return file_path
         except Exception as e:
             logger.warning(f"API download failed, falling back to yt-dlp: {e}")
 
+        # Fallback: yt-dlp
         ext = "mp4" if video else "webm"
         filename = f"downloads/{video_id}.{ext}"
         if Path(filename).exists():
-            logger.info(f"Found existing fallback file: {filename}")
             return filename
-            
+
         cookie = self.get_cookies()
         base_opts = {
             "outtmpl": "downloads/%(id)s.%(ext)s",
-            "quiet": False,  # Changed to False for verbose yt-dlp output
+            "quiet": True,
             "noplaylist": True,
             "geo_bypass": True,
-            "no_warnings": False,  # Show warnings
+            "no_warnings": True,
             "overwrites": False,
             "nocheckcertificate": True,
             "cookiefile": cookie,
-            "verbose": True,  # Enable yt-dlp verbose logging
         }
+
         if video:
             ydl_opts = {
                 **base_opts,
-                "format": "(bestvideo[height<=?720][ext=mp4])+(bestaudio)",
+                "format": "(bestvideo[height<=?720][ext=mp4])+(bestaudio[ext=m4a])/bestvideo+bestaudio/best",
                 "merge_output_format": "mp4",
             }
         else:
             ydl_opts = {
                 **base_opts,
-                "format": "bestaudio[ext=webm][acodec=opus]",
+                "format": "bestaudio[ext=webm][acodec=opus]/bestaudio[ext=m4a]/bestaudio/best",
             }
-        
-        def _download():
-            try:
-                logger.info(f"Starting yt-dlp download with opts: {ydl_opts}")
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([url])
-                logger.info(f"yt-dlp download completed: {filename}")
-                return filename
-            except yt_dlp.utils.DownloadError as e:
-                logger.error(f"yt-dlp DownloadError: {e}")
-                if cookie:
-                    logger.warning(f"Removing bad cookie: {cookie}")
-                    self.cookies = [c for c in self.cookies if c != cookie]
-                return None
-            except Exception as e:
-                logger.exception(f"yt-dlp unexpected error: {e}")
-                return None
 
-        result = await asyncio.to_thread(_download)
-        return result
+        def _download():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                try:
+                    ydl.download([url])
+                    return filename
+                except (yt_dlp.utils.DownloadError, yt_dlp.utils.ExtractorError) as e:
+                    logger.error(f"yt-dlp DownloadError: {e}")
+                    if cookie:
+                        self.cookies = [c for c in self.cookies if c != cookie]
+                    return None
+                except Exception as e:
+                    logger.warning(f"yt-dlp unexpected error: {e}")
+                    return None
+
+        return await asyncio.to_thread(_download)
