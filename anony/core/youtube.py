@@ -15,9 +15,6 @@ from py_yt import Playlist, VideosSearch
 from anony import config
 from anony.helpers import Track, utils
 
-# =========================
-# 🔥 CUSTOM API FUNCTIONS
-# =========================
 BASE_URL = config.BASE_URL
 API_KEY = config.API_KEY
 
