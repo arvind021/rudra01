@@ -7,4 +7,4 @@ pytgcrypto>=1.2.11
 py-yt-search~=0.5.5
 python-dotenv~=1.2.1
 yt-dlp[default]>=2025.12.8
-git+https://github.com/MaybeChiku/pytgcalls.git@master
+git+https://github.com/pytgcalls/pytgcalls.git
