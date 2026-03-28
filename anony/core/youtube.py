@@ -119,7 +119,6 @@ class YouTube:
             "nocheckcertificate": True,
             "cookiefile": cookie,
         }
-
         if video:
             ext = "mp4"
             filename = f"downloads/{video_id}.{ext}"
@@ -131,7 +130,6 @@ class YouTube:
                 "merge_output_format": "mp4",
             }
         else:
-            # Try opus/webm first, fallback to any bestaudio, then best
             ext = "webm"
             filename = f"downloads/{video_id}.{ext}"
             if Path(filename).exists():
