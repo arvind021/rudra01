@@ -36,7 +36,7 @@ class Config:
         self.PING_IMG = getenv("PING_IMG", "https://files.catbox.moe/haagg2.png")
         self.START_IMG = getenv("START_IMG", "https://files.catbox.moe/zvziwk.jpg")
         self.API_KEY = getenv("API_KEY", None)
-        self.API_URL = getenv("API_URL", "https://babyapi.pro")
+        self.BASE_URL = getenv("BASE_URL", "https://babyapi.pro")
 
     def check(self):
         missing = [
