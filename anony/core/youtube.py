@@ -2,6 +2,7 @@
 # Licensed under the MIT License.
 # This file is part of AnonXMusic
 
+
 import os
 import re
 import yt_dlp
@@ -12,53 +13,10 @@ from pathlib import Path
 
 from py_yt import Playlist, VideosSearch
 
-from anony import config
+from anony import logger, config
 from anony.helpers import Track, utils
 
-BASE_URL = config.BASE_URL
-API_KEY = config.API_KEY
-
-async def _download_media(link: str, kind: str, exts: list[str], wait: int = 100):
-    vid = link.split("v=")[-1].split("&")[0]
-    os.makedirs("downloads", exist_ok=True)
-    for ext in exts:
-        path = f"downloads/{vid}.{ext}"
-        if os.path.exists(path):
-            return path
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{BASE_URL}/api/{kind}?query={vid}&eq=pro&api={API_KEY}"
-            ) as resp:
-                res = await resp.json()
-            stream = res.get("stream")
-            media_type = res.get("type")
-            if not stream:
-                raise Exception(f"{kind} stream not found")
-            if media_type == "live":
-                return stream
-            for _ in range(wait):
-                async with session.get(stream) as r:
-                    if r.status == 200:
-                        return stream
-                    if r.status in (423, 404, 410):
-                        await asyncio.sleep(2)
-                        continue
-                    if r.status in (401, 403, 429):
-                        txt = await r.text()
-                        raise Exception(
-                            f"{kind} blocked {r.status}: {txt[:100]}"
-                        )
-                    raise Exception(f"{kind} failed ({r.status})")
-            raise Exception(f"{kind} processing timeout")
-    except Exception:
-        raise
-
-async def download_song(link: str):
-    return await _download_media(link, "song", ["mp3", "m4a", "webm"], wait=60)
-
-async def download_video(link: str):
-    return await _download_media(link, "video", ["mp4", "webm", "mkv"], wait=90)
+from .musicApi import MusicApi
 
 
 class YouTube:
@@ -66,6 +24,7 @@ class YouTube:
         self.base = "https://www.youtube.com/watch?v="
         self.cookies = []
         self.checked = False
+        self.music = MusicApi()
         self.cookie_dir = "anony/cookies"
         self.warned = False
         self.regex = re.compile(
@@ -83,10 +42,12 @@ class YouTube:
         if not self.cookies:
             if not self.warned:
                 self.warned = True
+                logger.warning("Cookies are missing; downloads might fail.")
             return None
         return random.choice(self.cookies)
 
     async def save_cookies(self, urls: list[str]) -> None:
+        logger.info("Saving cookies from urls...")
         async with aiohttp.ClientSession() as session:
             for i, url in enumerate(urls):
                 path = f"{self.cookie_dir}/cookie_{i}.txt"
@@ -95,6 +56,7 @@ class YouTube:
                     resp.raise_for_status()
                     with open(path, "wb") as fw:
                         fw.write(await resp.read())
+        logger.info(f"Cookies saved in {self.cookie_dir}.")
 
     def valid(self, url: str) -> bool:
         return bool(re.match(self.regex, url))
@@ -142,21 +104,10 @@ class YouTube:
 
     async def download(self, video_id: str, video: bool = False) -> str | None:
         url = self.base + video_id
-        try:
-            if not video:
-                file_path = await download_song(url)
-            else:
-                file_path = await download_video(url)
-
-            if file_path:
+        if not video and config.API_KEY and config.API_URL:
+            if file_path := await self.music.download_track(url):
                 return file_path
-        except Exception:
-            pass
 
-        ext = "mp4" if video else "webm"
-        filename = f"downloads/{video_id}.{ext}"
-        if Path(filename).exists():
-            return filename
         cookie = self.get_cookies()
         base_opts = {
             "outtmpl": "downloads/%(id)s.%(ext)s",
@@ -170,28 +121,56 @@ class YouTube:
         }
 
         if video:
+            ext = "mp4"
+            filename = f"downloads/{video_id}.{ext}"
+            if Path(filename).exists():
+                return filename
             ydl_opts = {
                 **base_opts,
-                "format": "(bestvideo[height<=?720][ext=mp4])+(bestaudio)",
+                "format": "(bestvideo[height<=?720][width<=?1280][ext=mp4])+(bestaudio[ext=m4a])/bestvideo[height<=?720]+bestaudio/best",
                 "merge_output_format": "mp4",
             }
         else:
+            # Try opus/webm first, fallback to any bestaudio, then best
+            ext = "webm"
+            filename = f"downloads/{video_id}.{ext}"
+            if Path(filename).exists():
+                return filename
             ydl_opts = {
                 **base_opts,
-                "format": "bestaudio[ext=webm][acodec=opus]",
+                "format": "bestaudio[ext=webm][acodec=opus]/bestaudio[ext=m4a]/bestaudio/best",
+                "postprocessors": [{
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "opus",
+                    "preferredquality": "128",
+                }],
+                "postprocessor_args": ["-vn"],
+                "keepvideo": False,
             }
 
         def _download():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 try:
-                    ydl.download([url])
-                except (yt_dlp.utils.DownloadError, yt_dlp.utils.ExtractorError):
+                    info = ydl.extract_info(url, download=True)
+                    if info is None:
+                        return None
+                    downloaded = ydl.prepare_filename(info)
+                    # Handle extension change by postprocessor
+                    for candidate_ext in ["webm", "opus", "m4a", "mp3", "mp4"]:
+                        candidate = f"downloads/{video_id}.{candidate_ext}"
+                        if Path(candidate).exists():
+                            return candidate
+                    return downloaded if Path(downloaded).exists() else None
+                except (yt_dlp.utils.DownloadError, yt_dlp.utils.ExtractorError) as e:
+                    logger.warning("yt_dlp download error: %s", e)
                     if cookie:
-                        self.cookies.remove(cookie)
+                        try:
+                            self.cookies.remove(cookie)
+                        except ValueError:
+                            pass
                     return None
-                except Exception:
+                except Exception as ex:
+                    logger.warning("Download failed: %s", ex)
                     return None
-            return filename
 
-        result = await asyncio.to_thread(_download)
-        return result
+        return await asyncio.to_thread(_download)
