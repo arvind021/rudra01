@@ -59,18 +59,69 @@ queue = Queue()
 from anony.core.calls import TgCall
 anon = TgCall()
 
+# ✅ Redis initialization
+import aioredis
+import asyncio
+
+async def init_redis():
+    """Initialize Redis connection"""
+    try:
+        redis = aioredis.from_url(config.REDIS_URL)
+        await redis.ping()
+        logger.info(f"✅ Redis connected: {config.REDIS_URL}")
+        await yt.init_redis()  # Initialize YouTube Redis cache
+        return redis
+    except Exception as e:
+        logger.warning(f"⚠️ Redis connection failed: {e}")
+        logger.info("Bot will work without Redis caching")
+        return None
+
+# Store Redis connection globally
+redis_conn = None
+
+async def init_app():
+    """Initialize application"""
+    global redis_conn
+    try:
+        redis_conn = await init_redis()
+    except Exception as e:
+        logger.warning(f"Redis init failed: {e}")
 
 async def stop() -> None:
-    logger.info("Stopping...")
+    """Stop the application gracefully"""
+    logger.info("🛑 Stopping...")
+    
+    # Cancel all tasks
     for task in tasks:
         task.cancel()
         try:
             await task
         except:
             pass
+    
+    # Close connections
+    try:
+        await app.exit()
+    except:
+        pass
+    
+    try:
+        await userbot.exit()
+    except:
+        pass
+    
+    try:
+        await db.close()
+    except:
+        pass
+    
+    # Close Redis
+    global redis_conn
+    if redis_conn:
+        try:
+            await redis_conn.close()
+            logger.info("Redis connection closed")
+        except:
+            pass
 
-    await app.exit()
-    await userbot.exit()
-    await db.close()
-
-    logger.info("Stopped.\n")
+    logger.info("✅ Stopped.\n")
