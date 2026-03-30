@@ -37,11 +37,23 @@ class Inline:
         if not remove:
             keyboard.append(
                 [
+                    self.ikb(text="« -30s", callback_data=f"controls seek_back {chat_id}"),
+                    self.ikb(text="⚙️", callback_data=f"controls status {chat_id}"),
+                    self.ikb(text="+30s »", callback_data=f"controls seek_fwd {chat_id}"),
+                ]
+            )
+            keyboard.append(
+                [
                     self.ikb(text="▷", callback_data=f"controls resume {chat_id}"),
-                    self.ikb(text="II", callback_data=f"controls pause {chat_id}"),
-                    self.ikb(text="⥁", callback_data=f"controls replay {chat_id}"),
-                    self.ikb(text="‣‣I", callback_data=f"controls skip {chat_id}"),
-                    self.ikb(text="▢", callback_data=f"controls stop {chat_id}"),
+                    self.ikb(text="⏸", callback_data=f"controls pause {chat_id}"),
+                    self.ikb(text="🔁", callback_data=f"controls replay {chat_id}"),
+                    self.ikb(text="⏭", callback_data=f"controls skip {chat_id}"),
+                    self.ikb(text="⏹", callback_data=f"controls stop {chat_id}"),
+                ]
+            )
+            keyboard.append(
+                [
+                    self.ikb(text="✖ CLOSE ✖", callback_data=f"controls close {chat_id}"),
                 ]
             )
         return self.ikm(keyboard)
@@ -58,8 +70,9 @@ class Inline:
             ]
         else:
             cbs = ["admins", "auth", "blist", "lang", "ping", "play", "queue", "stats", "sudo"]
+            icons = ["🛡", "🔑", "❌", "🗣", "🏓", "🎶", "📝", "📈", "⭐"]
             buttons = [
-                self.ikb(text=_lang[f"help_{i}"], callback_data=f"help {cb}")
+                self.ikb(text=icons[list(cbs).index(cb)] + " " + _lang[f"help_{list(cbs).index(cb)}"], callback_data=f"help {cb}")
                 for i, cb in enumerate(cbs)
             ]
             rows = [buttons[i : i + 3] for i in range(0, len(buttons), 3)]
@@ -131,14 +144,14 @@ class Inline:
         rows = [
             [
                 self.ikb(
-                    text=lang["add_me"],
+                    text="🎧 Aᴅᴅ Mᴇ Tᴏ Gʀᴏᴜᴘ",
                     url=f"https://t.me/{app.username}?startgroup=true",
                 )
             ],
-            [self.ikb(text=lang["help"], callback_data="help")],
+            [self.ikb(text="📖 Hᴇʟᴘ", callback_data="help")],
             [
-                self.ikb(text=lang["support"], url=config.SUPPORT_CHAT),
-                self.ikb(text=lang["channel"], url=config.SUPPORT_CHANNEL),
+                self.ikb(text="💫 Sᴜᴘᴘᴏʀᴛ", url=config.SUPPORT_CHAT),
+                self.ikb(text="🌟 Cʜᴀɴɴᴇʟ", url=config.SUPPORT_CHANNEL),
             ],
         ]
         if private:

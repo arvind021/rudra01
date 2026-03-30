@@ -77,7 +77,7 @@ class TgCall(PyTgCalls):
             await client.play(
                 chat_id=chat_id,
                 stream=stream,
-                config=types.GroupCallConfig(auto_start=False),
+                config=types.GroupCallConfig(auto_start=True),
             )
             if not seek_time:
                 media.time = 1
@@ -92,7 +92,7 @@ class TgCall(PyTgCalls):
                 try:
                     await message.edit_media(
                         media=InputMediaPhoto(
-                            media=_thumb,
+                            media=_thumb or config.DEFAULT_THUMB,
                             caption=text,
                         ),
                         reply_markup=keyboard,
@@ -131,8 +131,12 @@ class TgCall(PyTgCalls):
 
 
     async def play_next(self, chat_id: int) -> None:
-        
+
         media = queue.get_next(chat_id)
+
+        if not media:
+            return await self.stop(chat_id)
+
         try:
             if media.message_id:
                 await app.delete_messages(
@@ -143,9 +147,6 @@ class TgCall(PyTgCalls):
                 media.message_id = 0
         except:
             pass
-
-        if not media:
-            return await self.stop(chat_id)
 
         _lang = await lang.get_lang(chat_id)
         msg = await app.send_message(chat_id=chat_id, text=_lang["play_next"])

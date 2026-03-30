@@ -11,7 +11,7 @@ class Config:
         self.BOT_TOKEN = getenv("BOT_TOKEN")
         self.MONGO_URL = getenv("MONGO_URL")
 
-        self.LOGGER_ID = int(getenv("LOGGER_ID", 0))
+        self.LOGGER_ID = getenv("LOGGER_ID", 0)
         self.OWNER_ID = int(getenv("OWNER_ID", 0))
 
         self.DURATION_LIMIT = int(getenv("DURATION_LIMIT", 240)) * 60
@@ -37,6 +37,7 @@ class Config:
         self.START_IMG = getenv("START_IMG", "https://files.catbox.moe/zvziwk.jpg")
         self.API_KEY = getenv("API_KEY", None)
         self.BASE_URL = getenv("BASE_URL", "https://babyapi.pro")
+        self.CACHE_CHANNEL = int(getenv("CACHE_CHANNEL", 0))
 
     def check(self):
         missing = [

@@ -93,6 +93,19 @@ async def _controls(_, query: types.CallbackQuery):
         status = query.lang["replayed"]
         reply = query.lang["play_replayed"].format(user)
 
+    elif action == "seek_back":
+        media = queue.get_current(chat_id)
+        seek = max(0, (media.time or 0) - 30)
+        await anon.play_media(chat_id=chat_id, message=query.message, media=media, seek_time=seek)
+        return await query.answer(f"⏪ -30s", show_alert=False)
+    elif action == "seek_fwd":
+        media = queue.get_current(chat_id)
+        seek = (media.time or 0) + 30
+        await anon.play_media(chat_id=chat_id, message=query.message, media=media, seek_time=seek)
+        return await query.answer(f"⏩ +30s", show_alert=False)
+    elif action == "close":
+        await query.message.delete()
+        return
     elif action == "stop":
         await anon.stop(chat_id)
         status = query.lang["stopped"]
