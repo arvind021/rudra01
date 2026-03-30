@@ -259,6 +259,7 @@ class YouTube:
                     return None
 
         return await asyncio.to_thread(_download)
+
     async def _tg_cache_get(self, video_id: str) -> str | None:
         """Get cached file_id from Redis (tg cache)"""
         try:
@@ -274,26 +275,6 @@ class YouTube:
 
     async def _tg_cache_set(self, video_id: str, file_id: str) -> None:
         """Save file_id to Redis (tg cache)"""
-        try:
-            redis = aioredis.from_url("redis://localhost")
-            await redis.set(f"tg:{video_id}", file_id)
-            await redis.close()
-        except Exception:
-            pass
-
-    async def _tg_cache_get(self, video_id: str) -> str | None:
-        try:
-            redis = aioredis.from_url("redis://localhost")
-            cached = await redis.get(f"tg:{video_id}")
-            await redis.close()
-            if cached:
-                logger.info(f"Telegram cache hit: {video_id}")
-                return cached.decode()
-        except Exception:
-            pass
-        return None
-
-    async def _tg_cache_set(self, video_id: str, file_id: str) -> None:
         try:
             redis = aioredis.from_url("redis://localhost")
             await redis.set(f"tg:{video_id}", file_id)
