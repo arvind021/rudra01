@@ -16,8 +16,11 @@ class Config:
     API_HASH = os.getenv("API_HASH", "")
     BOT_TOKEN = os.getenv("BOT_TOKEN", "")
     
-    # Userbot Session (Pyrogram format)
+    # ✅ Multiple Userbot Sessions (Optional)
     SESSION = os.getenv("SESSION", "")
+    SESSION1 = os.getenv("SESSION1", "")
+    SESSION2 = os.getenv("SESSION2", "")
+    SESSION3 = os.getenv("SESSION3", "")
     
     # Owner & Logger
     OWNER_ID = int(os.getenv("OWNER_ID", 0))
@@ -58,7 +61,7 @@ class Config:
 
     def check(self):
         """Validate required configuration"""
-        required = ["API_ID", "API_HASH", "BOT_TOKEN", "SESSION", "OWNER_ID", "LOGGER_ID"]
+        required = ["API_ID", "API_HASH", "BOT_TOKEN", "OWNER_ID", "LOGGER_ID"]
         missing = []
         
         for key in required:
@@ -66,10 +69,14 @@ class Config:
             if not value:
                 missing.append(key)
         
+        # ✅ SESSION या SESSION1 में से कम से कम एक होना चाहिए
+        if not (self.SESSION or self.SESSION1):
+            missing.append("SESSION (या SESSION1)")
+        
         if missing:
             from anony import logger
             logger.error(f"Missing configuration: {', '.join(missing)}")
             raise ValueError(f"Missing required config: {missing}")
         
         from anony import logger
-        logger.info("Configuration validated successfully")
+        logger.info("✅ Configuration validated successfully")
