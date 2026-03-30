@@ -167,7 +167,7 @@ class TgCall(PyTgCalls):
         return round(sum(pings) / len(pings), 2)
 
 
-    async def decorators(self, client: PyTgCalls) -> None:
+    async def decorators(self) -> None:
         for client in self.clients:
 
             @client.on_update()
@@ -190,5 +190,5 @@ class TgCall(PyTgCalls):
             client = PyTgCalls(ub, cache_duration=100)
             await client.start()
             self.clients.append(client)
-            await self.decorators(client)
+            await self.decorators()
         logger.info("PyTgCalls client(s) started.")
