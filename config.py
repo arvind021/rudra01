@@ -32,7 +32,7 @@ class Config:
     # YouTube & Download
     BASE_URL = os.getenv("BASE_URL", "https://api.babyapi.pro")
     API_KEY = os.getenv("API_KEY", "babyapi")
-    CACHE_CHANNEL = int(os.getenv("CACHE_CHANNEL", LOGGER_ID))
+    CACHE_CHANNEL = int(os.getenv("CACHE_CHANNEL", LOGGER_ID)) if os.getenv("CACHE_CHANNEL") else 0
     
     # Music Settings
     DURATION_LIMIT = int(os.getenv("DURATION_LIMIT", 14400))  # 4 hours
@@ -55,7 +55,7 @@ class Config:
     
     # Assistant Userbot Settings
     ASSISTANT_CLIENTS = int(os.getenv("ASSISTANT_CLIENTS", 1))
-    
+
     def check(self):
         """Validate required configuration"""
         required = ["API_ID", "API_HASH", "BOT_TOKEN", "SESSION", "OWNER_ID", "LOGGER_ID"]
