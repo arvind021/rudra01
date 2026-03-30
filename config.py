@@ -52,6 +52,11 @@ class Config:
         "https://te.legra.ph/file/6213633868c5c81b91a73.jpg"
     )
     
+    # ✅ ADD ये सब नए variables
+    AUTO_END = bool(os.getenv("AUTO_END", False))
+    ALLOW_USER_REQUESTS = bool(os.getenv("ALLOW_USER_REQUESTS", True))
+    ENABLE_CACHE = bool(os.getenv("ENABLE_CACHE", True))
+    
     # Features
     PREFIXES = ["/", "!"]
     LOAD_PLUGINS = True
