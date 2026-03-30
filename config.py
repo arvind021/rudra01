@@ -1,49 +1,75 @@
-from os import getenv
+# Copyright (c) 2025 AnonymousX1025
+# Licensed under the MIT License.
+# This file is part of AnonXMusic
+
+import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
+
 class Config:
-    def __init__(self):
-        self.API_ID = int(getenv("API_ID", 0))
-        self.API_HASH = getenv("API_HASH")
+    """Bot Configuration"""
 
-        self.BOT_TOKEN = getenv("BOT_TOKEN")
-        self.MONGO_URL = getenv("MONGO_URL")
-
-        self.LOGGER_ID = getenv("LOGGER_ID", 0)
-        self.OWNER_ID = int(getenv("OWNER_ID", 0))
-
-        self.DURATION_LIMIT = int(getenv("DURATION_LIMIT", 240)) * 60
-        self.QUEUE_LIMIT = int(getenv("QUEUE_LIMIT", 20))
-        self.PLAYLIST_LIMIT = int(getenv("PLAYLIST_LIMIT", 20))
-
-        self.SESSION1 = getenv("SESSION", None)
-        self.SESSION2 = getenv("SESSION2", None)
-        self.SESSION3 = getenv("SESSION3", None)
-
-        self.SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/+dZCL9T23szs5MzVl")
-        self.SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/+dZCL9T23szs5MzVl")
-
-        self.AUTO_END: bool = getenv("AUTO_END", False)
-        self.AUTO_LEAVE: bool = getenv("AUTO_LEAVE", False)
-        self.VIDEO_PLAY: bool = getenv("VIDEO_PLAY", True)
-        self.COOKIES_URL = [
-            url for url in getenv("COOKIES_URL", "").split(" ")
-            if url and "batbin.me" in url
-        ]
-        self.DEFAULT_THUMB = getenv("DEFAULT_THUMB", "https://te.legra.ph/file/3e40a408286d4eda24191.jpg")
-        self.PING_IMG = getenv("PING_IMG", "https://files.catbox.moe/haagg2.png")
-        self.START_IMG = getenv("START_IMG", "https://files.catbox.moe/zvziwk.jpg")
-        self.API_KEY = getenv("API_KEY", None)
-        self.BASE_URL = getenv("BASE_URL", "https://babyapi.pro")
-        self.CACHE_CHANNEL = int(getenv("CACHE_CHANNEL", 0))
-
+    # Telegram API
+    API_ID = int(os.getenv("API_ID", 0))
+    API_HASH = os.getenv("API_HASH", "")
+    BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+    
+    # Userbot Session (Pyrogram format)
+    SESSION = os.getenv("SESSION", "")
+    
+    # Owner & Logger
+    OWNER_ID = int(os.getenv("OWNER_ID", 0))
+    LOGGER_ID = int(os.getenv("LOGGER_ID", 0))
+    
+    # Database
+    MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
+    
+    # Redis Cache
+    REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+    
+    # YouTube & Download
+    BASE_URL = os.getenv("BASE_URL", "https://api.babyapi.pro")
+    API_KEY = os.getenv("API_KEY", "babyapi")
+    CACHE_CHANNEL = int(os.getenv("CACHE_CHANNEL", LOGGER_ID))
+    
+    # Music Settings
+    DURATION_LIMIT = int(os.getenv("DURATION_LIMIT", 14400))  # 4 hours
+    PLAYLIST_LIMIT = int(os.getenv("PLAYLIST_LIMIT", 50))
+    QUEUE_LIMIT = int(os.getenv("QUEUE_LIMIT", 500))
+    
+    # Support
+    SUPPORT_CHAT = os.getenv("SUPPORT_CHAT", "https://t.me/PremMusic")
+    SUPPORT_CHANNEL = os.getenv("SUPPORT_CHANNEL", "https://t.me/PremMusic")
+    
+    # Thumbnails
+    DEFAULT_THUMB = os.getenv(
+        "DEFAULT_THUMB",
+        "https://te.legra.ph/file/6213633868c5c81b91a73.jpg"
+    )
+    
+    # Features
+    PREFIXES = ["/", "!"]
+    LOAD_PLUGINS = True
+    
+    # Assistant Userbot Settings
+    ASSISTANT_CLIENTS = int(os.getenv("ASSISTANT_CLIENTS", 1))
+    
     def check(self):
-        missing = [
-            var
-            for var in ["API_ID", "API_HASH", "BOT_TOKEN", "MONGO_URL", "LOGGER_ID", "OWNER_ID", "SESSION1"]
-            if not getattr(self, var)
-        ]
+        """Validate required configuration"""
+        required = ["API_ID", "API_HASH", "BOT_TOKEN", "SESSION", "OWNER_ID", "LOGGER_ID"]
+        missing = []
+        
+        for key in required:
+            value = getattr(self, key, None)
+            if not value:
+                missing.append(key)
+        
         if missing:
-            raise SystemExit(f"Missing required environment variables: {', '.join(missing)}")
+            from anony import logger
+            logger.error(f"Missing configuration: {', '.join(missing)}")
+            raise ValueError(f"Missing required config: {missing}")
+        
+        from anony import logger
+        logger.info("Configuration validated successfully")
