@@ -19,6 +19,7 @@ from anony.helpers import Track, utils
 BASE_URL = config.BASE_URL
 API_KEY = config.API_KEY
 CACHE_CHANNEL = config.CACHE_CHANNEL
+REDIS_URL = config.REDIS_URL
 
 # In-memory cache for ultra-fast playback
 _mem_cache: dict = {}
@@ -120,17 +121,29 @@ class YouTube:
         self.checked = False
         self.cookie_dir = "anony/cookies"
         self.warned = False
+        self.redis = None
         self.regex = re.compile(
             r"(https?://)?(www\.|m\.|music\.)?"
             r"(youtube\.com/(watch\?v=|shorts/|playlist\?list=)|youtu\.be/)"
             r"([A-Za-z0-9_-]{11}|PL[A-Za-z0-9_-]+)([&?][^\s]*)?"
         )
 
+    async def init_redis(self):
+        """Initialize Redis connection"""
+        try:
+            self.redis = aioredis.from_url(REDIS_URL)
+            await self.redis.ping()
+            logger.info("Redis connected for YouTube cache")
+        except Exception as e:
+            logger.warning(f"Redis connection failed: {e}")
+            self.redis = None
+
     def get_cookies(self):
         if not self.checked:
-            for file in os.listdir(self.cookie_dir):
-                if file.endswith(".txt"):
-                    self.cookies.append(f"{self.cookie_dir}/{file}")
+            if os.path.exists(self.cookie_dir):
+                for file in os.listdir(self.cookie_dir):
+                    if file.endswith(".txt"):
+                        self.cookies.append(f"{self.cookie_dir}/{file}")
             self.checked = True
         if not self.cookies:
             if not self.warned:
@@ -141,6 +154,7 @@ class YouTube:
 
     async def save_cookies(self, urls: list[str]) -> None:
         logger.info("Saving cookies from urls...")
+        os.makedirs(self.cookie_dir, exist_ok=True)
         async with aiohttp.ClientSession() as session:
             for i, url in enumerate(urls):
                 path = f"{self.cookie_dir}/cookie_{i}.txt"
@@ -260,10 +274,101 @@ class YouTube:
 
         return await asyncio.to_thread(_download)
 
-    async def _tg_cache_get(self, video_id: str) -> str | None:
-        """Get cached file_id from Redis (tg cache)"""
+    async def _redis_get(self, key: str) -> str | None:
+        """Get value from Redis"""
+        if not self.redis:
+            return None
         try:
-            redis = aioredis.from_url("redis://localhost")
+            value = await self.redis.get(key)
+            if value:
+                logger.info(f"Redis cache hit: {key}")
+                return value.decode() if isinstance(value, bytes) else value
+        except Exception as e:
+            logger.warning(f"Redis get failed: {e}")
+        return None
+
+    async def _redis_set(self, key: str, value: str, ttl: int = 3600) -> None:
+        """Set value in Redis with TTL"""
+        if not self.redis:
+            return
+        try:
+            await self.redis.setex(key, ttl, value)
+            logger.info(f"Redis cache set: {key}")
+        except Exception as e:
+            logger.warning(f"Redis set failed: {e}")
+
+    async def get_stream_url(self, video_id: str, video: bool = False) -> str | None:
+        """
+        Get stream URL with multi-level caching:
+        1. Local file (fastest)
+        2. Memory cache
+        3. Redis cache
+        4. API fetch
+        """
+        kind = "video" if video else "song"
+        cache_key = f"stream:{kind}:{video_id}"
+        
+        # 1. Check local file first (fastest)
+        for ext in ["mp3", "m4a", "webm", "mp4"]:
+            path = f"downloads/{video_id}.{ext}"
+            if os.path.exists(path):
+                logger.info(f"Local file hit: {path}")
+                return path
+        
+        # 2. Memory cache check
+        if cache_key in _mem_cache:
+            logger.info(f"Memory cache hit: {video_id}")
+            return _mem_cache[cache_key]
+        
+        # 3. Redis cache check
+        redis_cached = await self._redis_get(cache_key)
+        if redis_cached:
+            _mem_cache[cache_key] = redis_cached
+            logger.info(f"Redis cache hit: {video_id}")
+            return redis_cached
+        
+        # 4. Fetch from API
+        try:
+            async with aiohttp.ClientSession() as session:
+                async def _fetch():
+                    api_url = f"{BASE_URL}/api/{kind}?query={video_id}&eq=pro&api={API_KEY}"
+                    async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                        if resp.status != 200:
+                            return None
+                        res = await resp.json()
+                        return res.get("stream")
+                
+                # Fetch from API (try 3 times concurrently)
+                streams = await asyncio.gather(_fetch(), _fetch(), _fetch(), return_exceptions=True)
+                stream = next((s for s in streams if isinstance(s, str) and s), None)
+                
+                if not stream:
+                    return None
+                
+                # Wait for stream to be ready
+                for _ in range(30):
+                    async with session.get(stream, timeout=aiohttp.ClientTimeout(total=10)) as r:
+                        if r.status == 200:
+                            # Cache in memory and Redis
+                            _mem_cache[cache_key] = stream
+                            await self._redis_set(cache_key, stream, ttl=3600)
+                            logger.info(f"Stream URL fetched and cached: {video_id}")
+                            return stream
+                        elif r.status in (423, 404, 410):
+                            await asyncio.sleep(0.5)
+                            continue
+                        else:
+                            return None
+                
+                return None
+        except Exception as e:
+            logger.warning(f"get_stream_url failed: {e}")
+            return None
+
+    async def _tg_cache_get(self, video_id: str) -> str | None:
+        """Get cached file_id from Redis (Telegram cache)"""
+        try:
+            redis = aioredis.from_url(REDIS_URL)
             cached = await redis.get(f"tg:{video_id}")
             await redis.close()
             if cached:
@@ -274,68 +379,10 @@ class YouTube:
         return None
 
     async def _tg_cache_set(self, video_id: str, file_id: str) -> None:
-        """Save file_id to Redis (tg cache)"""
+        """Save file_id to Redis (Telegram cache)"""
         try:
-            redis = aioredis.from_url("redis://localhost")
+            redis = aioredis.from_url(REDIS_URL)
             await redis.set(f"tg:{video_id}", file_id)
             await redis.close()
         except Exception:
             pass
-
-    async def get_stream_url(self, video_id: str, video: bool = False) -> str | None:
-        kind = "video" if video else "song"
-        cache_key = f"stream:{kind}:{video_id}"
-        # Check local file first (fastest)
-        for ext in ["mp3", "m4a", "webm", "mp4"]:
-            path = f"downloads/{video_id}.{ext}"
-            if os.path.exists(path):
-                logger.info(f"Local file hit: {path}")
-                return path
-        # Memory cache check (fastest)
-        if cache_key in _mem_cache:
-            logger.info(f"Memory cache hit: {video_id}")
-            return _mem_cache[cache_key]
-        try:
-            redis = aioredis.from_url("redis://localhost")
-            cached = await redis.get(cache_key)
-            await redis.close()
-            if cached:
-                _mem_cache[cache_key] = cached.decode()
-                logger.info(f"Redis cache hit: {video_id}")
-                return cached.decode()
-        except Exception:
-            pass
-        try:
-            async with aiohttp.ClientSession() as session:
-                async def _fetch():
-                    api_url = f"{BASE_URL}/api/{kind}?query={video_id}&eq=pro&api={API_KEY}"
-                    async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                        if resp.status != 200:
-                            return None
-                        res = await resp.json()
-                        return res.get("stream")
-                streams = await asyncio.gather(_fetch(), _fetch(), _fetch(), return_exceptions=True)
-                stream = next((s for s in streams if isinstance(s, str) and s), None)
-                if not stream:
-                    return None
-                for _ in range(30):
-                    async with session.get(stream, timeout=aiohttp.ClientTimeout(total=10)) as r:
-                        if r.status == 200:
-                            _mem_cache[cache_key] = stream
-                            try:
-                                redis = aioredis.from_url("redis://localhost")
-                                await redis.setex(cache_key, 3600, stream)
-                                await redis.close()
-                                logger.info(f"Redis cached: {video_id}")
-                            except Exception:
-                                pass
-                            return stream
-                        elif r.status in (423, 404, 410):
-                            await asyncio.sleep(0.5)
-                            continue
-                        else:
-                            return None
-                return None
-        except Exception as e:
-            logger.warning(f"get_stream_url failed: {e}")
-            return None
